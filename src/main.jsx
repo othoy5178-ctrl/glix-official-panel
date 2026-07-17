@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
-const DEFAULT_API_URL = 'http://localhost:5000';
-// const DEFAULT_API_URL = import.meta.env.VITE_API_URL || 'https://voice-api-production-703d.up.railway.app';
+// const DEFAULT_API_URL = 'http://localhost:5000';
+const DEFAULT_API_URL = import.meta.env.VITE_API_URL || 'https://voice-api-production-703d.up.railway.app';
 const STORAGE_KEY = 'glix-official-session';
 
 const navItems = [
