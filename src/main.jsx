@@ -8,6 +8,7 @@ const STORAGE_KEY = 'glix-official-session';
 
 const navItems = [
   { key: 'dashboard', label: 'Dashboard' },
+  { key: 'roomLinks', label: 'Room Links' },
   { key: 'users', label: 'Users' },
   { key: 'hosts', label: 'Host Requests' },
   { key: 'agencies', label: 'Agencies' },
@@ -24,6 +25,11 @@ const navItems = [
 const money = (value) => new Intl.NumberFormat('en-US').format(Number(value || 0));
 const shortId = (value) => value ? `${String(value).slice(0, 6)}...${String(value).slice(-4)}` : '-';
 const niceDate = (value) => value ? new Date(value).toLocaleString() : '-';
+const getRoomIdFromPortalPath = () => {
+  if (typeof window === 'undefined') return '';
+  const match = window.location.pathname.match(/^\/rooms\/([^/?#]+)/i);
+  return match?.[1] ? decodeURIComponent(match[1]) : '';
+};
 
 async function parseApiResponse(response) {
   const text = await response.text();
@@ -377,6 +383,75 @@ function Dashboard({ request }) {
         <span>Video rooms live: {money(stats?.liveVideoRooms)}</span>
         <span>Weekly gift transactions: {money(stats?.weeklyGiftTransactions)}</span>
       </div>
+    </Panel>
+  );
+}
+
+function RoomLinks({ request, apiBase }) {
+  const [roomId, setRoomId] = useState(getRoomIdFromPortalPath);
+  const [room, setRoom] = useState(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const safeRoomId = roomId.trim();
+  const encodedRoomId = encodeURIComponent(room?.canonicalRoomId || safeRoomId);
+  const publicRoomUrl = encodedRoomId ? `${apiBase}/room/${encodedRoomId}` : '';
+  const appRoomUrl = encodedRoomId ? `glix://room/${encodedRoomId}` : '';
+
+  const load = useCallback(async () => {
+    if (!safeRoomId) {
+      setError('Enter a room id first.');
+      setRoom(null);
+      return;
+    }
+
+    setBusy(true);
+    setError('');
+    try {
+      const data = await request(`/admin/rooms/resolve/${encodeURIComponent(safeRoomId)}`);
+      setRoom(data);
+    } catch (err) {
+      setRoom(null);
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }, [request, safeRoomId]);
+
+  useEffect(() => {
+    if (safeRoomId) load();
+  }, [load, safeRoomId]);
+
+  return (
+    <Panel error={error} actions={<button className="primary" onClick={load} disabled={busy}>{busy ? 'Checking...' : 'Resolve'}</button>}>
+      <div className="formPanel">
+        <label>
+          Room ID
+          <input value={roomId} onChange={(e) => setRoomId(e.target.value)} placeholder="Audio ObjectId or video channel name" />
+        </label>
+      </div>
+
+      {room ? (
+        <div className="roomLinkCard">
+          <div>
+            <p className="eyebrow">{room.roomMode === 'video' ? 'Video Live Room' : 'Voice Live Room'}</p>
+            <h3>{room.title || 'Glix Live Room'}</h3>
+            <div className="requestMeta">
+              <span>Status: <StatusBadge value={room.isLive ? 'active' : 'ended'} /></span>
+              <span>Host ID: {room.hostId || '-'}</span>
+              <span>Room ID: {room.roomId || '-'}</span>
+              <span>Database ID: {room.dbRoomId || '-'}</span>
+            </div>
+          </div>
+          <div className="roomLinkActions">
+            <button className="primary" disabled={!room.isLive} onClick={() => window.open(appRoomUrl, '_self')}>Open App</button>
+            <button onClick={() => window.open(publicRoomUrl, '_blank', 'noopener,noreferrer')}>Public Link</button>
+            <button onClick={() => navigator.clipboard?.writeText(publicRoomUrl)}>Copy Link</button>
+          </div>
+        </div>
+      ) : (
+        <EmptyState>Enter a live room id to resolve its app link and portal details.</EmptyState>
+      )}
     </Panel>
   );
 }
@@ -1020,13 +1095,14 @@ function App() {
   const [session, setSession] = useState(() => {
     try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch { return null; }
   });
-  const [active, setActive] = useState('dashboard');
-  const { request } = useAdminApi(session, setSession);
+  const [active, setActive] = useState(() => getRoomIdFromPortalPath() ? 'roomLinks' : 'dashboard');
+  const { apiBase, request } = useAdminApi(session, setSession);
 
   const current = useMemo(() => {
     if (!session) return null;
     const role = session.user?.role;
     if (role !== 'super_admin') return <OfficialOnly setSession={setSession} />;
+    if (active === 'roomLinks') return <RoomLinks request={request} apiBase={apiBase} />;
     if (active === 'users') return <Users request={request} />;
     if (active === 'hosts') return <Requests request={request} type="hosts" />;
     if (active === 'agencies') return <Agencies request={request} />;
@@ -1039,7 +1115,7 @@ function App() {
     if (active === 'sellerBalances') return <SellerBalances request={request} />;
     if (active === 'monthlyCommissions') return <MonthlyCommissions request={request} />;
     return <Dashboard request={request} />;
-  }, [active, request, session]);
+  }, [active, apiBase, request, session]);
 
   if (!session) return <Login onLogin={setSession} />;
 

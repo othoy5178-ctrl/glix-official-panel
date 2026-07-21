@@ -73,6 +73,9 @@ td small, .muted, .brand span, .userPill small { display: block; color: #6b7d90;
 .cardsList { display: grid; gap: 12px; padding: 14px; }
 .requestCard { display: grid; grid-template-columns: 1.2fr 1.2fr auto; gap: 14px; align-items: center; border: 1px solid #e5ebf3; border-radius: 10px; padding: 14px; background: #fbfdff; }
 .requestMeta { display: grid; gap: 5px; color: #516173; font-weight: 750; }
+.roomLinkCard { margin: 16px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: center; border: 1px solid #d7ebe7; border-radius: 14px; padding: 18px; background: linear-gradient(135deg, #fbfffd, #eefaf7); }
+.roomLinkCard h3 { margin: 0 0 10px; font-size: 22px; letter-spacing: 0; }
+.roomLinkActions { display: flex; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
 
 .modalBackdrop { position: fixed; inset: 0; background: rgba(6, 20, 38, .44); display: grid; place-items: center; padding: 18px; z-index: 10; }
 .modal { width: min(620px, 100%); max-height: 92vh; overflow: auto; background: #fff; border-radius: 14px; border: 1px solid #e2e8f0; box-shadow: 0 30px 90px rgba(6, 20, 38, .28); padding: 20px; display: grid; gap: 14px; }
@@ -86,7 +89,8 @@ td small, .muted, .brand span, .userPill small { display: block; color: #6b7d90;
   .sidebar nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .statGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .filters, .inlineForm { grid-template-columns: 1fr; }
-  .requestCard { grid-template-columns: 1fr; }
+  .requestCard, .roomLinkCard { grid-template-columns: 1fr; }
+  .roomLinkActions { justify-content: flex-start; }
 }
 
 @media (max-width: 680px) {
