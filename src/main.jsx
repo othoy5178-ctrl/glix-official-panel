@@ -17,6 +17,7 @@ const navItems = [
   { key: 'store', label: 'Store' },
   { key: 'notifications', label: 'Notifications' },
   { key: 'accessRequests', label: 'Official Access Requests' },
+  { key: 'officialUsers', label: 'Official Accounts' },
   { key: 'coinSellers', label: 'Coin Seller Requests' },
   { key: 'sellerBalances', label: 'Seller Balances' },
   { key: 'monthlyCommissions', label: 'Monthly Commissions' },
@@ -209,9 +210,9 @@ function Login({ onLogin }) {
           <h1>{isLogin ? 'Official Portal' : isForgot ? 'Reset Password' : isRegister ? 'Request Official Access' : 'Enter OTP'}</h1>
           <p className="muted">
             {isLogin
-              ? 'Super Admin access only. All other roles must use their own app or portal.'
+              ? 'Super Admin access only. Official accounts are separate from app users.'
               : isRegister
-                ? 'Official access is restricted to the Super Admin role only.'
+                ? 'Request access to the separate Official Portal account system.'
                 : isForgot
                   ? 'Enter your Super Admin email and we will send a six digit OTP.'
                   : 'Enter the OTP from your email and choose a new password.'}
@@ -238,6 +239,8 @@ function Login({ onLogin }) {
             Requested Role
             <select value={requestedRole} onChange={(e) => setRequestedRole(e.target.value)}>
               <option value="super_admin">Super Admin</option>
+              <option value="admin">Admin</option>
+              <option value="manager">Manager</option>
             </select>
           </label>
         )}
@@ -590,31 +593,58 @@ function Requests({ request, type }) {
     load();
   };
 
+  const getVerificationPhotos = (row) => {
+    const registration = isHost ? row.hostRegistration || {} : row.agencyRegistration || {};
+    const photos = isHost
+      ? [{ label: 'Selfie', url: registration.selfiePhotoUrl }]
+      : [
+        { label: 'Profile', url: registration.profilePhotoUrl },
+        { label: 'ID Front', url: registration.idFrontUrl },
+        { label: 'ID Back', url: registration.idBackUrl },
+        { label: 'Selfie', url: registration.selfiePhotoUrl },
+      ];
+
+    return photos.filter(photo => !!photo.url);
+  };
+
   return (
     <Panel error={error} onRefresh={load}>
       <div className="cardsList">
-        {rows.map(row => (
-          <article className="requestCard" key={row._id}>
-            <div><strong>{row.name}</strong><small>{row.email}<br />ID {row.glixId || shortId(row._id)}</small></div>
-            <div className="requestMeta">
-              {isHost ? (
-                <>
-                  <span>{row.hostRegistration?.hostType || 'Host request'}</span>
-                  <span>{row.hostRegistration?.phoneCountryCode} {row.hostRegistration?.phoneNumber}</span>
-                </>
-              ) : (
-                <>
-                  <span>{row.agencyRegistration?.agencyName || row.name}</span>
-                  <span>Code: {row.agencyRegistration?.requestedAgencyCode || row.agencyCode || '-'}</span>
-                </>
-              )}
-            </div>
-            <div className="rowActions">
-              <button onClick={() => review(row._id, 'rejected')}>Reject</button>
-              <button className="primary" onClick={() => review(row._id, 'approved')}>Approve</button>
-            </div>
-          </article>
-        ))}
+        {rows.map(row => {
+          const photos = getVerificationPhotos(row);
+
+          return (
+            <article className="requestCard requestCardWithPhotos" key={row._id}>
+              <div><strong>{row.name}</strong><small>{row.email}<br />ID {row.glixId || shortId(row._id)}</small></div>
+              <div className="requestMeta">
+                {isHost ? (
+                  <>
+                    <span>{row.hostRegistration?.hostType || 'Host request'}</span>
+                    <span>{row.hostRegistration?.phoneCountryCode} {row.hostRegistration?.phoneNumber}</span>
+                  </>
+                ) : (
+                  <>
+                    <span>{row.agencyRegistration?.agencyName || row.name}</span>
+                    <span>Code: {row.agencyRegistration?.requestedAgencyCode || row.agencyCode || '-'}</span>
+                    <span>{row.agencyRegistration?.phoneCountryCode} {row.agencyRegistration?.phoneNumber}</span>
+                  </>
+                )}
+              </div>
+              <div className="verificationPhotos">
+                {photos.length ? photos.map(photo => (
+                  <a key={photo.label} href={photo.url} target="_blank" rel="noreferrer" className="verificationPhoto">
+                    <img src={photo.url} alt={photo.label} />
+                    <span>{photo.label}</span>
+                  </a>
+                )) : <span className="muted">No verification photos</span>}
+              </div>
+              <div className="rowActions">
+                <button onClick={() => review(row._id, 'rejected')}>Reject</button>
+                <button className="primary" onClick={() => review(row._id, 'approved')}>Approve</button>
+              </div>
+            </article>
+          );
+        })}
       </div>
       {!rows.length && <EmptyState>No pending requests.</EmptyState>}
     </Panel>
@@ -641,10 +671,13 @@ function AccessRequests({ request }) {
   const review = async (user, nextStatus) => {
     const requestedRole = user.adminAccessRequest?.requestedRole || 'super_admin';
     const reason = nextStatus === 'rejected' ? window.prompt('Reason for rejection?') || '' : '';
-    await request(`/admin/access/requests/${user._id}`, {
+    const data = await request(`/admin/access/requests/${user._id}`, {
       method: 'PATCH',
-      body: JSON.stringify({ status: nextStatus, role: requestedRole, reason }),
+      body: JSON.stringify({ status: nextStatus, role: requestedRole, reason, requestKind: user.requestKind }),
     });
+    if (data?.tempPassword) {
+      window.alert(`Official account created. Temporary password: ${data.tempPassword}`);
+    }
     load();
   };
 
@@ -658,6 +691,7 @@ function AccessRequests({ request }) {
               <small>{row.email}<br />ID {row.glixId || shortId(row._id)}</small>
             </div>
             <div className="requestMeta">
+              <span>Source: {row.requestKind === 'official' ? 'Official Portal' : 'App User'}</span>
               <span>Requested role: {row.adminAccessRequest?.requestedRole || '-'}</span>
               <span>Status: {row.adminAccessRequest?.status || 'none'}</span>
               <span>Requested: {niceDate(row.adminAccessRequest?.requestedAt)}</span>
@@ -681,6 +715,89 @@ function AccessRequests({ request }) {
     </Panel>
   );
 }
+
+const emptyOfficialAccount = { name: '', email: '', password: '', role: 'manager', status: 'active', permissions: '' };
+
+function OfficialUsers({ request }) {
+  const [accounts, setAccounts] = useState([]);
+  const [editing, setEditing] = useState(null);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  const load = useCallback(async () => {
+    setError('');
+    try {
+      const data = await request('/admin/official-users');
+      setAccounts(data.accounts || []);
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [request]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = async (account) => {
+    setError('');
+    setNotice('');
+    const permissions = String(account.permissions || '')
+      .split(',')
+      .map(item => item.trim())
+      .filter(Boolean);
+    const payload = { ...account, permissions };
+    const isNew = !account._id;
+    await request(isNew ? '/admin/official-users' : `/admin/official-users/${account._id}`, {
+      method: isNew ? 'POST' : 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    setEditing(null);
+    setNotice(isNew ? 'Official account created.' : 'Official account updated.');
+    load();
+  };
+
+  return (
+    <Panel error={error} onRefresh={load} actions={<button className="primary" onClick={() => setEditing(emptyOfficialAccount)}>New Official Account</button>}>
+      {notice && <div className="successBox">{notice}</div>}
+      <table>
+        <thead><tr><th>Account</th><th>Role</th><th>Status</th><th>Source</th><th>Last Login</th><th /></tr></thead>
+        <tbody>
+          {accounts.map(account => (
+            <tr key={account._id}>
+              <td><strong>{account.name}</strong><small>{account.email}<br />{shortId(account._id)}</small></td>
+              <td><StatusBadge value={account.role} /></td>
+              <td><StatusBadge value={account.status} /></td>
+              <td>{account.sourceUserId ? 'App request' : 'Official'}</td>
+              <td>{niceDate(account.lastLogin)}</td>
+              <td><button onClick={() => setEditing({ ...account, password: '', permissions: (account.permissions || []).join(', ') })}>Edit</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!accounts.length && <EmptyState>No official accounts found.</EmptyState>}
+      {editing && <OfficialUserModal account={editing} onClose={() => setEditing(null)} onSave={save} />}
+    </Panel>
+  );
+}
+
+function OfficialUserModal({ account, onClose, onSave }) {
+  const [form, setForm] = useState(account);
+  const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
+  const isNew = !form._id;
+  return (
+    <div className="modalBackdrop">
+      <form className="modal" onSubmit={(e) => { e.preventDefault(); onSave(form); }}>
+        <h3>{isNew ? 'New Official Account' : 'Edit Official Account'}</h3>
+        <label>Name<input value={form.name || ''} onChange={(e) => set('name', e.target.value)} required /></label>
+        <label>Email<input type="email" value={form.email || ''} onChange={(e) => set('email', e.target.value)} required /></label>
+        <label>Role<select value={form.role || 'manager'} onChange={(e) => set('role', e.target.value)}><option value="super_admin">Super Admin</option><option value="admin">Admin</option><option value="manager">Manager</option></select></label>
+        <label>Status<select value={form.status || 'active'} onChange={(e) => set('status', e.target.value)}><option value="active">active</option><option value="pending">pending</option><option value="blocked">blocked</option><option value="rejected">rejected</option></select></label>
+        <label>{isNew ? 'Password' : 'New Password'}<input type="password" value={form.password || ''} onChange={(e) => set('password', e.target.value)} minLength={isNew ? 6 : undefined} required={isNew} placeholder={isNew ? '' : 'Leave blank to keep current password'} /></label>
+        <label>Permissions<input value={form.permissions || ''} onChange={(e) => set('permissions', e.target.value)} placeholder="comma,separated,optional" /></label>
+        <div className="modalActions"><button type="button" onClick={onClose}>Cancel</button><button className="primary">Save</button></div>
+      </form>
+    </div>
+  );
+}
+
 function Withdrawals({ request }) {
   const [rows, setRows] = useState([]);
   const [status, setStatus] = useState('all');
@@ -704,8 +821,13 @@ function Withdrawals({ request }) {
     load();
   };
 
+  const renderDetails = (details = {}) => Object.entries(details || {})
+    .filter(([, value]) => value !== null && value !== undefined && String(value).trim())
+    .map(([key, value]) => `${key}: ${value}`)
+    .join('\n');
+
   return (
-    <Panel error={error} onRefresh={load} actions={<select value={status} onChange={(e) => setStatus(e.target.value)}>{['pending', 'approved', 'rejected'].map(item => <option key={item}>{item}</option>)}</select>}>
+    <Panel error={error} onRefresh={load} actions={<select value={status} onChange={(e) => setStatus(e.target.value)}>{['all', 'pending', 'approved', 'rejected'].map(item => <option key={item}>{item}</option>)}</select>}>
       <table>
         <thead><tr><th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th><th /></tr></thead>
         <tbody>
@@ -713,7 +835,7 @@ function Withdrawals({ request }) {
             <tr key={item._id}>
               <td><strong>{item.userId?.name || 'User'}</strong><small>{item.userId?.glixId}</small></td>
               <td>{money(item.amount)}<small>{item.source}</small></td>
-              <td>{item.method}<small>{item.accountTitle}<br />{item.accountNumber}</small></td>
+              <td>{item.method}<small>{item.accountTitle}<br />{item.accountNumber}{renderDetails(item.details) ? <><br />{renderDetails(item.details)}</> : null}</small></td>
               <td><StatusBadge value={item.status} /></td>
               <td>{niceDate(item.createdAt)}</td>
               <td>{item.status === 'pending' && <div className="rowActions"><button onClick={() => review(item._id, 'rejected')}>Reject</button><button className="primary" onClick={() => review(item._id, 'approved')}>Approve</button></div>}</td>
@@ -1111,6 +1233,7 @@ function App() {
     if (active === 'store') return <Store request={request} />;
     if (active === 'notifications') return <Notifications request={request} />;
     if (active === 'accessRequests') return <AccessRequests request={request} />;
+    if (active === 'officialUsers') return <OfficialUsers request={request} />;
     if (active === 'coinSellers') return <CoinSellers request={request} />;
     if (active === 'sellerBalances') return <SellerBalances request={request} />;
     if (active === 'monthlyCommissions') return <MonthlyCommissions request={request} />;
