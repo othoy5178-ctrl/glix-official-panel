@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
 // const DEFAULT_API_URL = 'http://localhost:5000';
-const DEFAULT_API_URL = import.meta.env.VITE_API_URL || 'https://voice-api-production-703d.up.railway.app';
+// import.meta.env.VITE_API_URL ||
+const DEFAULT_API_URL =  'https://voice-api-production-703d.up.railway.app';
 const STORAGE_KEY = 'glix-official-session';
 
 const navItems = [
@@ -18,6 +19,7 @@ const navItems = [
   { key: 'notifications', label: 'Notifications' },
   { key: 'accessRequests', label: 'Official Access Requests' },
   { key: 'officialUsers', label: 'Official Accounts' },
+  { key: 'roomThemes', label: 'Room Theme Requests' },
   { key: 'coinSellers', label: 'Coin Seller Requests' },
   { key: 'sellerBalances', label: 'Seller Balances' },
   { key: 'monthlyCommissions', label: 'Monthly Commissions' },
@@ -277,8 +279,10 @@ function Login({ onLogin }) {
               <button type="button" className="linkButton" onClick={() => { setError(''); setNotice(''); setMode('forgot'); }}>
                 Forgot password?
               </button>
-              
-            </>
+              <button type="button" className="linkButton" onClick={() => { setError(''); setNotice(''); setMode('register'); }}>
+                Request access
+              </button>
+</>
           ) : (
             <button type="button" className="linkButton" onClick={() => { setError(''); setMode('login'); }}>
               Back to sign in
@@ -530,7 +534,7 @@ function Users({ request }) {
       {!users.length && <EmptyState />}
       <div className="pager">
         <button disabled={meta.page <= 1} onClick={() => load(meta.page - 1)}>Previous</button>
-        <span>Page {meta.page} / {meta.pages || 1} · {money(meta.total)} users</span>
+        <span>Page {meta.page} / {meta.pages || 1} Â· {money(meta.total)} users</span>
         <button disabled={meta.page >= meta.pages} onClick={() => load(meta.page + 1)}>Next</button>
       </div>
       {editing && <UserModal user={editing} onClose={() => setEditing(null)} onSave={saveUser} />}
@@ -955,6 +959,77 @@ function StoreModal({ item, onClose, onSave }) {
   );
 }
 
+function RoomThemeRequests({ request }) {
+  const [rows, setRows] = useState([]);
+  const [status, setStatus] = useState('pending');
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    setError('');
+    try {
+      const data = await request(`/admin/room-themes/requests?status=${status}`);
+      setRows(data.requests || []);
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [request, status]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const review = async (themeId, nextStatus) => {
+    const reason = nextStatus === 'rejected' ? window.prompt('Reason for rejection?') || '' : '';
+    await request(`/admin/room-themes/requests/${themeId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: nextStatus, reason }),
+    });
+    load();
+  };
+
+  return (
+    <Panel
+      error={error}
+      onRefresh={load}
+      actions={(
+        <select value={status} onChange={(e) => setStatus(e.target.value)}>
+          {['pending', 'approved', 'rejected', 'expired', 'all'].map(item => <option key={item}>{item}</option>)}
+        </select>
+      )}
+    >
+      <div className="themeRequestGrid">
+        {rows.map(row => (
+          <article className="themeRequestCard" key={row._id}>
+            <a href={row.imageUrl} target="_blank" rel="noreferrer" className="themeRequestPreview">
+              <img src={row.thumbnailUrl || row.imageUrl} alt="Room theme preview" />
+            </a>
+            <div className="themeRequestBody">
+              <strong>{row.user?.name || 'User'}</strong>
+              <small>{row.user?.email || '-'}<br />ID {row.user?.glixId || shortId(row.user?._id)}</small>
+              <div className="requestMeta">
+                <span>Status: {row.status}</span>
+                <span>Price: {money(row.priceCoins)} coins</span>
+                <span>Requested: {niceDate(row.createdAt)}</span>
+                {row.expiresAt && <span>Expires: {niceDate(row.expiresAt)}</span>}
+                {row.rejectionReason && <span>Reason: {row.rejectionReason}</span>}
+              </div>
+              <div className="rowActions">
+                {row.status === 'pending' ? (
+                  <>
+                    <button onClick={() => review(row._id, 'rejected')}>Reject</button>
+                    <button className="primary" onClick={() => review(row._id, 'approved')}>Approve 30 Days</button>
+                  </>
+                ) : (
+                  <StatusBadge value={row.status} />
+                )}
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+      {!rows.length && <EmptyState>No room theme requests.</EmptyState>}
+    </Panel>
+  );
+}
+
 function CoinSellers({ request }) {
   const [requests, setRequests] = useState([]);
   const [status, setStatus] = useState('all');
@@ -1234,6 +1309,7 @@ function App() {
     if (active === 'notifications') return <Notifications request={request} />;
     if (active === 'accessRequests') return <AccessRequests request={request} />;
     if (active === 'officialUsers') return <OfficialUsers request={request} />;
+    if (active === 'roomThemes') return <RoomThemeRequests request={request} />;
     if (active === 'coinSellers') return <CoinSellers request={request} />;
     if (active === 'sellerBalances') return <SellerBalances request={request} />;
     if (active === 'monthlyCommissions') return <MonthlyCommissions request={request} />;
@@ -1250,6 +1326,8 @@ function App() {
 }
 
 createRoot(document.getElementById('root')).render(<App />);
+
+
 
 
 
