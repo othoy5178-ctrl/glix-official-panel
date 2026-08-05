@@ -16,6 +16,7 @@ const navItems = [
   { key: 'agencyRequests', label: 'Agency Requests' },
   { key: 'withdrawals', label: 'Withdrawals' },
   { key: 'store', label: 'Store' },
+  { key: 'gifts', label: 'Gifts' },
   { key: 'notifications', label: 'Notifications' },
   { key: 'accessRequests', label: 'Official Access Requests' },
   { key: 'officialUsers', label: 'Official Accounts' },
@@ -802,6 +803,156 @@ function OfficialUserModal({ account, onClose, onSave }) {
   );
 }
 
+const emptyGift = {
+  name: '',
+  category: 'Popular',
+  price: 500,
+  mediaType: 'mp4',
+  animationUrl: '',
+  thumbnailUrl: '',
+  animationData: '',
+  thumbnailData: '',
+  isLuckyGift: false,
+  luckyReturnChance: 0,
+  isActive: true,
+  sortOrder: 0,
+};
+
+function Gifts({ request }) {
+  const [gifts, setGifts] = useState([]);
+  const [editing, setEditing] = useState(null);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  const load = useCallback(async () => {
+    setError('');
+    try {
+      const data = await request('/admin/gifts?includeInactive=true');
+      setGifts(data.gifts || []);
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [request]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = async (gift) => {
+    setError('');
+    setNotice('');
+    const isNew = !gift._id;
+    const payload = {
+      ...gift,
+      price: Number(gift.price || 0),
+      luckyReturnChance: Number(gift.luckyReturnChance || 0),
+      sortOrder: Number(gift.sortOrder || 0),
+    };
+    delete payload.id;
+    delete payload._id;
+    delete payload.createdAt;
+    delete payload.updatedAt;
+    delete payload.icon;
+    delete payload.thumbnail;
+    delete payload.tab;
+
+    await request(isNew ? '/admin/gifts' : `/admin/gifts/${gift._id}`, {
+      method: isNew ? 'POST' : 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    setEditing(null);
+    setNotice(isNew ? 'Gift uploaded.' : 'Gift updated.');
+    load();
+  };
+
+  return (
+    <Panel error={error} onRefresh={load} actions={<button className="primary" onClick={() => setEditing(emptyGift)}>Upload Gift</button>}>
+      {notice && <div className="successBox">{notice}</div>}
+      <table>
+        <thead><tr><th>Gift</th><th>Preview</th><th>Price</th><th>Media</th><th>Status</th><th /></tr></thead>
+        <tbody>
+          {gifts.map(gift => (
+            <tr key={gift._id}>
+              <td><strong>{gift.name}</strong><small>{gift.category}<br />Sort {gift.sortOrder || 0}</small></td>
+              <td>
+                <div className="giftPreviewCell">
+                  {gift.thumbnailUrl ? <img src={gift.thumbnailUrl} alt={gift.name} /> : <span>No thumbnail</span>}
+                  <a href={gift.animationUrl} target="_blank" rel="noreferrer">Open animation</a>
+                </div>
+              </td>
+              <td>{money(gift.price)} coins</td>
+              <td><StatusBadge value={gift.mediaType} /></td>
+              <td><StatusBadge value={gift.isActive ? 'active' : 'suspended'} /></td>
+              <td><button onClick={() => setEditing({ ...gift, animationData: '', thumbnailData: '' })}>Edit</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!gifts.length && <EmptyState>No gifts uploaded yet.</EmptyState>}
+      {editing && <GiftModal gift={editing} onClose={() => setEditing(null)} onSave={save} />}
+    </Panel>
+  );
+}
+
+function GiftModal({ gift, onClose, onSave }) {
+  const [form, setForm] = useState(gift);
+  const [reading, setReading] = useState(false);
+  const isNew = !form._id;
+  const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
+
+  const pickFile = async (key, file) => {
+    if (!file) return;
+    setReading(true);
+    try {
+      const dataUri = await fileToDataUri(file);
+      set(key, dataUri);
+      if (key === 'animationData') {
+        set('mediaType', file.type?.includes('video') || file.name?.toLowerCase().endsWith('.mp4') ? 'mp4' : 'gif');
+      }
+    } finally {
+      setReading(false);
+    }
+  };
+
+  return (
+    <div className="modalBackdrop">
+      <form className="modal wide" onSubmit={(e) => { e.preventDefault(); onSave(form); }}>
+        <h3>{isNew ? 'Upload Gift' : 'Edit Gift'}</h3>
+        <div className="formGrid">
+          <label>Name<input value={form.name || ''} onChange={(e) => set('name', e.target.value)} required /></label>
+          <label>Category<select value={form.category || 'Popular'} onChange={(e) => set('category', e.target.value)}><option>Popular</option><option>Lucky</option><option>Activities</option><option>Privilege</option></select></label>
+          <label>Price<input type="number" min="1" value={form.price || 0} onChange={(e) => set('price', e.target.value)} required /></label>
+          <label>Media Type<select value={form.mediaType || 'mp4'} onChange={(e) => set('mediaType', e.target.value)}><option value="mp4">mp4</option><option value="gif">gif</option></select></label>
+          <label>Sort Order<input type="number" value={form.sortOrder || 0} onChange={(e) => set('sortOrder', e.target.value)} /></label>
+          <label>Active<select value={String(form.isActive !== false)} onChange={(e) => set('isActive', e.target.value === 'true')}><option value="true">true</option><option value="false">false</option></select></label>
+          <label>Lucky Gift<select value={String(!!form.isLuckyGift)} onChange={(e) => set('isLuckyGift', e.target.value === 'true')}><option value="false">false</option><option value="true">true</option></select></label>
+          <label>Lucky Chance %<input type="number" min="0" max="100" value={form.luckyReturnChance || 0} onChange={(e) => set('luckyReturnChance', e.target.value)} /></label>
+        </div>
+
+        <div className="uploadGrid">
+          <label>Animation MP4/GIF<input type="file" accept="video/mp4,image/gif" onChange={(e) => pickFile('animationData', e.target.files?.[0])} required={isNew && !form.animationUrl} /></label>
+          <label>Thumbnail Image<input type="file" accept="image/*" onChange={(e) => pickFile('thumbnailData', e.target.files?.[0])} /></label>
+          <label>Animation URL<input value={form.animationUrl || ''} onChange={(e) => set('animationUrl', e.target.value)} placeholder="Optional if uploading file" /></label>
+          <label>Thumbnail URL<input value={form.thumbnailUrl || ''} onChange={(e) => set('thumbnailUrl', e.target.value)} placeholder="Optional" /></label>
+        </div>
+
+        <div className="giftPreviewPanel">
+          {form.thumbnailData || form.thumbnailUrl ? <img src={form.thumbnailData || form.thumbnailUrl} alt="Gift thumbnail preview" /> : <span>No thumbnail selected</span>}
+          <div>
+            <strong>{form.name || 'Gift preview'}</strong>
+            <small>{form.mediaType || 'mp4'} | {money(form.price)} coins</small>
+            {form.animationUrl && <a href={form.animationUrl} target="_blank" rel="noreferrer">Open current animation</a>}
+            {form.animationData && <span className="muted">New animation selected</span>}
+          </div>
+        </div>
+
+        <div className="modalActions">
+          <button type="button" onClick={onClose}>Cancel</button>
+          <button className="primary" disabled={reading}>{reading ? 'Reading file...' : 'Save Gift'}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function Withdrawals({ request }) {
   const [rows, setRows] = useState([]);
   const [status, setStatus] = useState('all');
@@ -958,6 +1109,17 @@ function StoreModal({ item, onClose, onSave }) {
     </div>
   );
 }
+
+const fileToDataUri = (file) => new Promise((resolve, reject) => {
+  if (!file) {
+    resolve('');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result || ''));
+  reader.onerror = () => reject(reader.error || new Error('Unable to read file'));
+  reader.readAsDataURL(file);
+});
 
 function RoomThemeRequests({ request }) {
   const [rows, setRows] = useState([]);
@@ -1306,6 +1468,7 @@ function App() {
     if (active === 'agencyRequests') return <Requests request={request} type="agencies" />;
     if (active === 'withdrawals') return <Withdrawals request={request} />;
     if (active === 'store') return <Store request={request} />;
+    if (active === 'gifts') return <Gifts request={request} />;
     if (active === 'notifications') return <Notifications request={request} />;
     if (active === 'accessRequests') return <AccessRequests request={request} />;
     if (active === 'officialUsers') return <OfficialUsers request={request} />;
