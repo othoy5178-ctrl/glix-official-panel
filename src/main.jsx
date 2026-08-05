@@ -16,7 +16,7 @@ const navItems = [
   { key: 'agencyRequests', label: 'Agency Requests' },
   { key: 'withdrawals', label: 'Withdrawals' },
   { key: 'store', label: 'Store' },
-  { key: 'gifts', label: 'Gifts' },
+  { key: 'gifts', label: 'Gift Upload' },
   { key: 'notifications', label: 'Notifications' },
   { key: 'accessRequests', label: 'Official Access Requests' },
   { key: 'officialUsers', label: 'Official Accounts' },
