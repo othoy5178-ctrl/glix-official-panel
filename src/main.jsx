@@ -1335,31 +1335,80 @@ function SellerBalances({ request }) {
 function MonthlyCommissions({ request }) {
   const [rows, setRows] = useState([]);
   const [totals, setTotals] = useState({ sourceCoins: 0, commissionAmount: 0 });
+  const [targets, setTargets] = useState([]);
+  const [targetTotals, setTargetTotals] = useState({ targetCoins: 0, achievedCoins: 0 });
+  const [agencies, setAgencies] = useState([]);
   const [status, setStatus] = useState('all');
-  const [month, setMonth] = useState('');
+  const [reportMode, setReportMode] = useState('monthly');
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [day, setDay] = useState(new Date().toISOString().slice(0, 10));
+  const [targetForm, setTargetForm] = useState({
+    agencyId: '',
+    targetCoins: '',
+    commissionRatePercent: '10',
+    note: '',
+  });
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     setError('');
     try {
       const query = new URLSearchParams({ status });
-      if (month.trim()) query.set('month', month.trim());
-      const data = await request(`/admin/monthly-commissions?${query.toString()}`);
+      if (reportMode === 'daily') {
+        if (day.trim()) query.set('day', day.trim());
+      } else if (month.trim()) {
+        query.set('month', month.trim());
+      }
+      const path = reportMode === 'daily' ? '/admin/daily-commissions' : '/admin/monthly-commissions';
+      const [data, targetData, agencyData] = await Promise.all([
+        request(`${path}?${query.toString()}`),
+        request(`/admin/agency-targets?month=${encodeURIComponent(month.trim() || new Date().toISOString().slice(0, 7))}`),
+        request('/admin/agencies'),
+      ]);
       setRows(data.commissions || []);
       setTotals(data.totals || { sourceCoins: 0, commissionAmount: 0 });
+      setTargets(targetData.targets || []);
+      setTargetTotals(targetData.totals || { targetCoins: 0, achievedCoins: 0 });
+      setAgencies(agencyData.agencies || []);
     } catch (err) {
       setError(err.message);
     }
-  }, [month, request, status]);
+  }, [day, month, reportMode, request, status]);
 
   useEffect(() => { load(); }, [load]);
 
+  const submitTarget = async (event) => {
+    event.preventDefault();
+    setError('');
+    try {
+      await request('/admin/agency-targets', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...targetForm,
+          month,
+          targetCoins: Number(targetForm.targetCoins || 0),
+          commissionRatePercent: Number(targetForm.commissionRatePercent || 10),
+        }),
+      });
+      setTargetForm({ agencyId: '', targetCoins: '', commissionRatePercent: '10', note: '' });
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const actions = (
     <>
+      <select value={reportMode} onChange={(e) => setReportMode(e.target.value)}>
+        <option value="monthly">Monthly</option>
+        <option value="daily">Daily</option>
+      </select>
       <select value={status} onChange={(e) => setStatus(e.target.value)}>
         {['all', 'pending', 'settled'].map(item => <option key={item}>{item}</option>)}
       </select>
-      <input placeholder="YYYY-MM" value={month} onChange={(e) => setMonth(e.target.value)} />
+      {reportMode === 'daily'
+        ? <input placeholder="YYYY-MM-DD" value={day} onChange={(e) => setDay(e.target.value)} />
+        : <input placeholder="YYYY-MM" value={month} onChange={(e) => setMonth(e.target.value)} />}
     </>
   );
 
@@ -1367,11 +1416,11 @@ function MonthlyCommissions({ request }) {
     <Panel error={error} onRefresh={load} actions={actions}>
       <div className="successBox">Coins: {money(totals.sourceCoins)} | Commission: {money(totals.commissionAmount)}</div>
       <table>
-        <thead><tr><th>Month</th><th>Agency</th><th>Host</th><th>Coins</th><th>Rate</th><th>Commission</th><th>Status</th></tr></thead>
+        <thead><tr><th>{reportMode === 'daily' ? 'Day' : 'Month'}</th><th>Agency</th><th>Host</th><th>Coins</th><th>Rate</th><th>Commission</th><th>Status</th></tr></thead>
         <tbody>
           {rows.map(row => (
             <tr key={row._id}>
-              <td>{row.month}</td>
+              <td>{reportMode === 'daily' ? row.day : row.month}</td>
               <td><strong>{row.beneficiaryId?.name || 'Agency'}</strong><small>{row.beneficiaryId?.agencyCode || row.beneficiaryId?.glixId || shortId(row.beneficiaryId?._id)}</small></td>
               <td><strong>{row.hostId?.name || 'Host'}</strong><small>{row.hostId?.glixId || shortId(row.hostId?._id)}</small></td>
               <td>{money(row.sourceCoins)}</td>
@@ -1382,7 +1431,43 @@ function MonthlyCommissions({ request }) {
           ))}
         </tbody>
       </table>
-      {!rows.length && <EmptyState>No monthly commission records.</EmptyState>}
+      {!rows.length && <EmptyState>No {reportMode} commission records.</EmptyState>}
+
+      <hr />
+      <h3>Monthly Agency Targets</h3>
+      <form className="inlineForm" onSubmit={submitTarget}>
+        <select value={targetForm.agencyId} onChange={(e) => setTargetForm({ ...targetForm, agencyId: e.target.value })} required>
+          <option value="">Select agency</option>
+          {agencies.map(agency => (
+            <option key={agency._id} value={agency._id}>{agency.name} - {agency.agencyCode || agency.glixId || shortId(agency._id)}</option>
+          ))}
+        </select>
+        <input placeholder="Target coins" type="number" min="0" value={targetForm.targetCoins} onChange={(e) => setTargetForm({ ...targetForm, targetCoins: e.target.value })} required />
+        <input placeholder="Rate %" type="number" min="0" step="0.01" value={targetForm.commissionRatePercent} onChange={(e) => setTargetForm({ ...targetForm, commissionRatePercent: e.target.value })} />
+        <input placeholder="Note" value={targetForm.note} onChange={(e) => setTargetForm({ ...targetForm, note: e.target.value })} />
+        <button className="primary">Save Target</button>
+      </form>
+      <div className="successBox">Target: {money(targetTotals.targetCoins)} | Achieved: {money(targetTotals.achievedCoins)}</div>
+      <table>
+        <thead><tr><th>Month</th><th>Agency</th><th>Target</th><th>Achieved</th><th>Progress</th><th>Rate</th><th>Status</th></tr></thead>
+        <tbody>
+          {targets.map(target => {
+            const progress = target.targetCoins > 0 ? Math.min(100, Math.round(((target.achievedCoins || 0) / target.targetCoins) * 100)) : 0;
+            return (
+              <tr key={target._id}>
+                <td>{target.month}</td>
+                <td><strong>{target.agencyId?.name || 'Agency'}</strong><small>{target.agencyId?.agencyCode || target.agencyId?.glixId || shortId(target.agencyId?._id)}</small></td>
+                <td>{money(target.targetCoins)}</td>
+                <td>{money(target.achievedCoins)}</td>
+                <td>{progress}%</td>
+                <td>{target.commissionRatePercent || 0}%</td>
+                <td><StatusBadge value={target.status} /></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {!targets.length && <EmptyState>No monthly targets for this month.</EmptyState>}
     </Panel>
   );
 }
