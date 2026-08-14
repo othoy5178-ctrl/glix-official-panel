@@ -13,12 +13,15 @@ const navItems = [
   { key: 'users', label: 'Users' },
   { key: 'hosts', label: 'Host Requests' },
   { key: 'agencies', label: 'Agencies' },
+  { key: 'agencyHosts', label: 'Agency Hosts' },
   { key: 'agencyRequests', label: 'Agency Requests' },
   { key: 'withdrawals', label: 'Withdrawals' },
   { key: 'store', label: 'Store' },
   { key: 'gifts', label: 'Gift Upload' },
   { key: 'notifications', label: 'Notifications' },
-  { key: 'accessRequests', label: 'Official Access Requests' },
+  { key: 'adminRequests', label: 'Admin Requests' },
+  { key: 'managerRequests', label: 'Manager Requests' },
+  { key: 'accessRequests', label: 'All Access Requests' },
   { key: 'officialUsers', label: 'Official Accounts' },
   { key: 'roomThemes', label: 'Room Theme Requests' },
   { key: 'coinSellers', label: 'Coin Seller Requests' },
@@ -656,7 +659,7 @@ function Requests({ request, type }) {
   );
 }
 
-function AccessRequests({ request }) {
+function AccessRequests({ request, roleFilter = '' }) {
   const [rows, setRows] = useState([]);
   const [status, setStatus] = useState('all');
   const [error, setError] = useState('');
@@ -672,6 +675,12 @@ function AccessRequests({ request }) {
   }, [request, status]);
 
   useEffect(() => { load(); }, [load]);
+
+  const visibleRows = useMemo(() => (
+    roleFilter
+      ? rows.filter(row => row.adminAccessRequest?.requestedRole === roleFilter)
+      : rows
+  ), [roleFilter, rows]);
 
   const review = async (user, nextStatus) => {
     const requestedRole = user.adminAccessRequest?.requestedRole || 'super_admin';
@@ -689,7 +698,7 @@ function AccessRequests({ request }) {
   return (
     <Panel error={error} onRefresh={load} actions={<select value={status} onChange={(e) => setStatus(e.target.value)}>{['pending', 'approved', 'rejected', 'all'].map(item => <option key={item}>{item}</option>)}</select>}>
       <div className="cardsList">
-        {rows.map(row => (
+        {visibleRows.map(row => (
           <article className="requestCard" key={row._id}>
             <div>
               <strong>{row.name}</strong>
@@ -716,7 +725,11 @@ function AccessRequests({ request }) {
           </article>
         ))}
       </div>
-      {!rows.length && <EmptyState>No access requests.</EmptyState>}
+      {!visibleRows.length && (
+        <EmptyState>
+          {roleFilter ? `No ${roleFilter} access requests.` : 'No access requests.'}
+        </EmptyState>
+      )}
     </Panel>
   );
 }
@@ -1005,6 +1018,9 @@ function Withdrawals({ request }) {
 
 function Agencies({ request }) {
   const [agencies, setAgencies] = useState([]);
+  const [agencyHosts, setAgencyHosts] = useState({});
+  const [expandedAgencyId, setExpandedAgencyId] = useState('');
+  const [loadingHostsId, setLoadingHostsId] = useState('');
   const [error, setError] = useState('');
   const [assign, setAssign] = useState({ identifier: '', agencyCode: '' });
 
@@ -1013,6 +1029,8 @@ function Agencies({ request }) {
     try {
       const data = await request('/admin/agencies');
       setAgencies(data.agencies || []);
+      setAgencyHosts({});
+      setExpandedAgencyId('');
     } catch (err) {
       setError(err.message);
     }
@@ -1027,6 +1045,27 @@ function Agencies({ request }) {
     load();
   };
 
+  const toggleHosts = async (agencyId) => {
+    if (expandedAgencyId === agencyId) {
+      setExpandedAgencyId('');
+      return;
+    }
+
+    setExpandedAgencyId(agencyId);
+    if (agencyHosts[agencyId]) return;
+
+    setLoadingHostsId(agencyId);
+    setError('');
+    try {
+      const data = await request(`/admin/agencies/${agencyId}/hosts`);
+      setAgencyHosts(prev => ({ ...prev, [agencyId]: data.hosts || [] }));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoadingHostsId('');
+    }
+  };
+
   return (
     <Panel error={error} onRefresh={load}>
       <form className="inlineForm" onSubmit={submit}>
@@ -1035,10 +1074,139 @@ function Agencies({ request }) {
         <button className="primary">Assign Agency</button>
       </form>
       <table>
-        <thead><tr><th>Agency</th><th>Code</th><th>Hosts</th><th>Coins</th><th>Commission</th></tr></thead>
-        <tbody>{agencies.map(item => <tr key={item._id}><td><strong>{item.name}</strong><small>{item.email}</small></td><td>{item.agencyCode}</td><td>{item.hostsCount}</td><td>{money(item.totalHostCoins)}</td><td>{money(item.commissionBalance)}</td></tr>)}</tbody>
+        <thead><tr><th>Agency</th><th>Code</th><th>Hosts</th><th>Coins</th><th>Commission</th><th /></tr></thead>
+        <tbody>
+          {agencies.map(item => {
+            const hosts = agencyHosts[item._id] || [];
+            const expanded = expandedAgencyId === item._id;
+            return (
+              <React.Fragment key={item._id}>
+                <tr>
+                  <td><strong>{item.name}</strong><small>{item.email}</small></td>
+                  <td>{item.agencyCode}</td>
+                  <td>{item.hostsCount}</td>
+                  <td>{money(item.totalHostCoins)}</td>
+                  <td>{money(item.commissionBalance)}</td>
+                  <td><button onClick={() => toggleHosts(item._id)}>{expanded ? 'Hide Hosts' : 'View Hosts'}</button></td>
+                </tr>
+                {expanded && (
+                  <tr>
+                    <td colSpan="6">
+                      {loadingHostsId === item._id ? (
+                        <small>Loading hosts...</small>
+                      ) : hosts.length ? (
+                        <table>
+                          <thead><tr><th>Host</th><th>Glix ID</th><th>Agency Code</th><th>Diamonds</th><th>Coins</th><th>Status</th></tr></thead>
+                          <tbody>
+                            {hosts.map(host => (
+                              <tr key={host._id}>
+                                <td><strong>{host.name || 'Host'}</strong><small>{host.email}</small></td>
+                                <td>{host.glixId || '-'}</td>
+                                <td>{host.hostRegistration?.agencyCode || host.agencyCode || '-'}</td>
+                                <td>{money(host.daimon)}</td>
+                                <td>{money(host.totalHostCoins)}</td>
+                                <td><StatusBadge value={host.hostStatus} /></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <EmptyState>No approved hosts linked with this agency.</EmptyState>
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </tbody>
       </table>
       {!agencies.length && <EmptyState />}
+    </Panel>
+  );
+}
+
+function AgencyHosts({ request }) {
+  const [agencies, setAgencies] = useState([]);
+  const [selectedAgencyId, setSelectedAgencyId] = useState('');
+  const [hosts, setHosts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const loadAgencies = useCallback(async () => {
+    setError('');
+    try {
+      const data = await request('/admin/agencies');
+      const nextAgencies = data.agencies || [];
+      setAgencies(nextAgencies);
+      setSelectedAgencyId(prev => prev || nextAgencies[0]?._id || '');
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [request]);
+
+  const loadHosts = useCallback(async (agencyId = selectedAgencyId) => {
+    if (!agencyId) {
+      setHosts([]);
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    try {
+      const data = await request(`/admin/agencies/${agencyId}/hosts`);
+      setHosts(data.hosts || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [request, selectedAgencyId]);
+
+  useEffect(() => { loadAgencies(); }, [loadAgencies]);
+  useEffect(() => { loadHosts(selectedAgencyId); }, [loadHosts, selectedAgencyId]);
+
+  const selectedAgency = agencies.find(item => item._id === selectedAgencyId);
+
+  const actions = (
+    <>
+      <select value={selectedAgencyId} onChange={(e) => setSelectedAgencyId(e.target.value)}>
+        {agencies.map(agency => (
+          <option key={agency._id} value={agency._id}>
+            {agency.name || 'Agency'} - {agency.agencyCode || agency.glixId || shortId(agency._id)}
+          </option>
+        ))}
+      </select>
+      <button onClick={() => loadHosts(selectedAgencyId)} disabled={!selectedAgencyId || loading}>
+        {loading ? 'Loading...' : 'Refresh Hosts'}
+      </button>
+    </>
+  );
+
+  return (
+    <Panel error={error} onRefresh={loadAgencies} actions={actions}>
+      {selectedAgency && (
+        <div className="successBox">
+          Agency: {selectedAgency.name || 'Agency'} | Code: {selectedAgency.agencyCode || '-'} | Hosts: {money(hosts.length)}
+        </div>
+      )}
+      <table>
+        <thead><tr><th>Host</th><th>Glix ID</th><th>Agency Code</th><th>Diamonds</th><th>Host Coins</th><th>Commission Source</th><th>Status</th></tr></thead>
+        <tbody>
+          {hosts.map(host => (
+            <tr key={host._id}>
+              <td><strong>{host.name || 'Host'}</strong><small>{host.email}</small></td>
+              <td>{host.glixId || '-'}</td>
+              <td>{host.hostRegistration?.agencyCode || host.agencyCode || '-'}</td>
+              <td>{money(host.daimon)}</td>
+              <td>{money(host.totalHostCoins)}</td>
+              <td>{host.agencyId ? 'Linked ID' : 'Agency Code'}</td>
+              <td><StatusBadge value={host.hostStatus} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!hosts.length && <EmptyState>{loading ? 'Loading hosts...' : 'No approved hosts linked with this agency.'}</EmptyState>}
     </Panel>
   );
 }
@@ -1550,11 +1718,14 @@ function App() {
     if (active === 'users') return <Users request={request} />;
     if (active === 'hosts') return <Requests request={request} type="hosts" />;
     if (active === 'agencies') return <Agencies request={request} />;
+    if (active === 'agencyHosts') return <AgencyHosts request={request} />;
     if (active === 'agencyRequests') return <Requests request={request} type="agencies" />;
     if (active === 'withdrawals') return <Withdrawals request={request} />;
     if (active === 'store') return <Store request={request} />;
     if (active === 'gifts') return <Gifts request={request} />;
     if (active === 'notifications') return <Notifications request={request} />;
+    if (active === 'adminRequests') return <AccessRequests request={request} roleFilter="admin" />;
+    if (active === 'managerRequests') return <AccessRequests request={request} roleFilter="manager" />;
     if (active === 'accessRequests') return <AccessRequests request={request} />;
     if (active === 'officialUsers') return <OfficialUsers request={request} />;
     if (active === 'roomThemes') return <RoomThemeRequests request={request} />;
