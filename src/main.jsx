@@ -354,19 +354,41 @@ function Login({ onLogin }) {
 
 function Dashboard({ request }) {
   const [stats, setStats] = useState(null);
+  const [roomGamesEnabled, setRoomGamesEnabled] = useState(false);
+  const [updatingRoomGames, setUpdatingRoomGames] = useState(false);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     setError('');
     try {
-      const data = await request('/admin/dashboard');
-      setStats(data.stats);
+      const [dashboardData, configData] = await Promise.all([
+        request('/admin/dashboard'),
+        request('/admin/app-config'),
+      ]);
+      setStats(dashboardData.stats);
+      setRoomGamesEnabled(configData.roomGamesEnabled === true);
     } catch (err) {
       setError(err.message);
     }
   }, [request]);
 
   useEffect(() => { load(); }, [load]);
+
+  const toggleRoomGames = async () => {
+    setUpdatingRoomGames(true);
+    setError('');
+    try {
+      const data = await request('/admin/app-config/room-games', {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled: !roomGamesEnabled }),
+      });
+      setRoomGamesEnabled(data.roomGamesEnabled === true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUpdatingRoomGames(false);
+    }
+  };
 
   const cards = [
     ['Total Users', stats?.totalUsers],
@@ -393,6 +415,12 @@ function Dashboard({ request }) {
         <span>Audio rooms live: {money(stats?.liveAudioRooms)}</span>
         <span>Video rooms live: {money(stats?.liveVideoRooms)}</span>
         <span>Weekly gift transactions: {money(stats?.weeklyGiftTransactions)}</span>
+      </div>
+      <div className="infoStrip">
+        <span>Room games: {roomGamesEnabled ? 'Enabled' : 'Disabled'}</span>
+        <button className="primary" onClick={toggleRoomGames} disabled={updatingRoomGames}>
+          {updatingRoomGames ? 'Saving...' : roomGamesEnabled ? 'Disable Games' : 'Enable Games'}
+        </button>
       </div>
     </Panel>
   );
