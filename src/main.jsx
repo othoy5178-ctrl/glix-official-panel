@@ -513,9 +513,11 @@ function Panel({ error, onRefresh, children, actions = null }) {
 
 function Users({ request }) {
   const [users, setUsers] = useState([]);
+  const [storeFrames, setStoreFrames] = useState([]);
   const [meta, setMeta] = useState({ page: 1, pages: 1, total: 0 });
   const [filters, setFilters] = useState({ search: '', role: 'all', accountStatus: 'all' });
   const [editing, setEditing] = useState(null);
+  const [frameSaving, setFrameSaving] = useState(false);
   const [error, setError] = useState('');
 
   const load = useCallback(async (page = 1) => {
@@ -532,10 +534,45 @@ function Users({ request }) {
 
   useEffect(() => { load(1); }, [load]);
 
+  useEffect(() => {
+    let active = true;
+    request('/admin/store/items')
+      .then(data => {
+        if (!active) return;
+        setStoreFrames((data.items || []).filter(item => item.type === 'frame' && item.isActive !== false));
+      })
+      .catch(err => {
+        if (active) setError(err.message);
+      });
+    return () => { active = false; };
+  }, [request]);
+
   const saveUser = async (payload) => {
     await request(`/admin/users/${editing._id}`, { method: 'PATCH', body: JSON.stringify(payload) });
     setEditing(null);
     load(meta.page);
+  };
+
+  const assignUserFrame = async (frameItemId) => {
+    setFrameSaving(true);
+    setError('');
+    try {
+      const data = await request(`/admin/users/${editing._id}/equipped-frame`, {
+        method: 'PATCH',
+        body: JSON.stringify({ frameItemId: frameItemId || null }),
+      });
+      const nextFrameUrl = data.user?.frameUrl || '';
+      setUsers(prev => prev.map(user => (
+        user._id === editing._id ? { ...user, frameUrl: nextFrameUrl } : user
+      )));
+      setEditing(prev => prev ? { ...prev, frameUrl: nextFrameUrl } : prev);
+      return data;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setFrameSaving(false);
+    }
   };
 
   return (
@@ -570,12 +607,28 @@ function Users({ request }) {
         <span>Page {meta.page} / {meta.pages || 1} Â· {money(meta.total)} users</span>
         <button disabled={meta.page >= meta.pages} onClick={() => load(meta.page + 1)}>Next</button>
       </div>
-      {editing && <UserModal user={editing} onClose={() => setEditing(null)} onSave={saveUser} />}
+      {editing && (
+        <UserModal
+          user={editing}
+          frames={storeFrames}
+          frameSaving={frameSaving}
+          onAssignFrame={assignUserFrame}
+          onClose={() => setEditing(null)}
+          onSave={saveUser}
+        />
+      )}
     </Panel>
   );
 }
 
-function UserModal({ user, onClose, onSave }) {
+const getStoreFramePreview = (item) => (
+  item?.frameUrl || item?.equipValue || item?.imageUrl || item?.previewUrl || item?.assetKey || ''
+);
+
+function UserModal({ user, frames, frameSaving, onAssignFrame, onClose, onSave }) {
+  const currentFrameItem = frames.find(item => getStoreFramePreview(item) === user.frameUrl);
+  const [selectedFrameId, setSelectedFrameId] = useState(currentFrameItem?._id || '');
+  const [frameMessage, setFrameMessage] = useState('');
   const [form, setForm] = useState({
     role: user.role || 'user',
     official: user.official === true,
@@ -587,9 +640,22 @@ function UserModal({ user, onClose, onSave }) {
     adminNote: user.adminNote || '',
   });
   const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
+  useEffect(() => {
+    const matchedFrame = frames.find(item => getStoreFramePreview(item) === user.frameUrl);
+    setSelectedFrameId(matchedFrame?._id || '');
+  }, [frames, user.frameUrl]);
+  const applySelectedFrame = async () => {
+    setFrameMessage('');
+    try {
+      await onAssignFrame(selectedFrameId || null);
+      setFrameMessage(selectedFrameId ? 'Frame applied.' : 'Frame removed.');
+    } catch {
+      setFrameMessage('');
+    }
+  };
   return (
     <div className="modalBackdrop">
-      <form className="modal" onSubmit={(e) => { e.preventDefault(); onSave(form); }}>
+      <form className="modal wide" onSubmit={(e) => { e.preventDefault(); onSave(form); }}>
         <h3>{user.name}</h3>
         <div className="formGrid">
           <label>Role<select value={form.role} onChange={(e) => set('role', e.target.value)}>{['user', 'host', 'agency', 'manager', 'admin', 'coin_seller', 'super_admin'].map(item => <option key={item}>{item}</option>)}</select></label>
@@ -603,6 +669,46 @@ function UserModal({ user, onClose, onSave }) {
             <span>Official colorful profile</span>
           </label>
         </div>
+        <section className="userFramePicker">
+          <div className="userFramePickerHeader">
+            <div>
+              <strong>Mic slot frame</strong>
+              <small>Select an active frame from the Store.</small>
+            </div>
+            <div className="rowActions">
+              {frameMessage && <span className="frameAppliedMessage">{frameMessage}</span>}
+              <button type="button" className="primary" disabled={frameSaving} onClick={applySelectedFrame}>
+                {frameSaving ? 'Applying...' : 'Apply frame'}
+              </button>
+            </div>
+          </div>
+          <div className="userFrameGrid">
+            <button
+              type="button"
+              className={`userFrameOption userFrameNone ${selectedFrameId === '' ? 'selected' : ''}`}
+              onClick={() => setSelectedFrameId('')}
+            >
+              <span>No frame</span>
+            </button>
+            {frames.map(frame => {
+              const previewUrl = getStoreFramePreview(frame);
+              const canPreview = /^https?:\/\//i.test(previewUrl);
+              return (
+                <button
+                  type="button"
+                  key={frame._id}
+                  className={`userFrameOption ${selectedFrameId === frame._id ? 'selected' : ''}`}
+                  onClick={() => setSelectedFrameId(frame._id)}
+                  title={frame.name}
+                >
+                  {canPreview ? <img src={previewUrl} alt="" /> : <span>App frame</span>}
+                  <small>{frame.name}</small>
+                </button>
+              );
+            })}
+          </div>
+          {!frames.length && <span className="muted">No active frame items are available in the Store.</span>}
+        </section>
         <label>Official note<textarea value={form.adminNote} onChange={(e) => set('adminNote', e.target.value)} /></label>
         <div className="modalActions"><button type="button" onClick={onClose}>Cancel</button><button className="primary">Save</button></div>
       </form>
