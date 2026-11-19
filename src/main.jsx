@@ -9,6 +9,7 @@ const STORAGE_KEY = 'glix-official-session';
 
 const navItems = [
   { key: 'dashboard', label: 'Dashboard' },
+  { key: 'homeBanners', label: 'Home Banners' },
   { key: 'roomLinks', label: 'Room Links' },
   { key: 'users', label: 'Users' },
   { key: 'hosts', label: 'Host Requests' },
@@ -577,6 +578,7 @@ function Users({ request }) {
 function UserModal({ user, onClose, onSave }) {
   const [form, setForm] = useState({
     role: user.role || 'user',
+    official: user.official === true,
     accountStatus: user.accountStatus || 'active',
     hostStatus: user.hostStatus || 'none',
     agencyStatus: user.agencyStatus || 'none',
@@ -596,6 +598,10 @@ function UserModal({ user, onClose, onSave }) {
           <label>Agency<select value={form.agencyStatus} onChange={(e) => set('agencyStatus', e.target.value)}>{['none', 'pending', 'approved', 'rejected'].map(item => <option key={item}>{item}</option>)}</select></label>
           <label>Coins<input type="number" value={form.chang} onChange={(e) => set('chang', e.target.value)} /></label>
           <label>Diamonds<input type="number" value={form.daimon} onChange={(e) => set('daimon', e.target.value)} /></label>
+          <label className="checkboxField">
+            <input type="checkbox" checked={form.official} onChange={(e) => set('official', e.target.checked)} />
+            <span>Official colorful profile</span>
+          </label>
         </div>
         <label>Official note<textarea value={form.adminNote} onChange={(e) => set('adminNote', e.target.value)} /></label>
         <div className="modalActions"><button type="button" onClick={onClose}>Cancel</button><button className="primary">Save</button></div>
@@ -1317,6 +1323,123 @@ const fileToDataUri = (file) => new Promise((resolve, reject) => {
   reader.readAsDataURL(file);
 });
 
+const createHomeBannerDraft = (index = 0) => ({
+  id: `home-banner-${Date.now()}-${index + 1}`,
+  url: '',
+  imageData: '',
+  active: true,
+  sortOrder: index,
+});
+
+function HomeBanners({ request }) {
+  const [banners, setBanners] = useState([]);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setError('');
+    try {
+      const data = await request('/admin/app-config');
+      setBanners(Array.isArray(data.homePromoBanners) ? data.homePromoBanners : []);
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [request]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const updateBanner = (index, updates) => {
+    setBanners(current => current.map((banner, bannerIndex) => (
+      bannerIndex === index ? { ...banner, ...updates } : banner
+    )));
+    setNotice('');
+  };
+
+  const selectBannerImage = async (index, file) => {
+    if (!file) return;
+    try {
+      const imageData = await fileToDataUri(file);
+      updateBanner(index, { imageData });
+    } catch (err) {
+      setError(err.message || 'Unable to read banner image.');
+    }
+  };
+
+  const addBanner = () => {
+    if (banners.length >= 10) {
+      setError('A maximum of 10 home banners is allowed.');
+      return;
+    }
+    setError('');
+    setBanners(current => [...current, createHomeBannerDraft(current.length)]);
+    setNotice('');
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const data = await request('/admin/app-config/home-banners', {
+        method: 'PATCH',
+        body: JSON.stringify({ banners }),
+      });
+      setBanners(data.homePromoBanners || []);
+      setNotice('Home banners updated successfully.');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const actions = (
+    <>
+      <button onClick={addBanner} disabled={saving || banners.length >= 10}>Add Banner</button>
+      <button className="primary" onClick={save} disabled={saving}>
+        {saving ? 'Saving...' : 'Save Changes'}
+      </button>
+    </>
+  );
+
+  return (
+    <Panel error={error} onRefresh={load} actions={actions}>
+      {notice && <div className="successBox">{notice}</div>}
+      <div className="homeBannerGrid">
+        {banners.map((banner, index) => {
+          const previewUrl = banner.imageData || banner.url;
+          return (
+            <div className="homeBannerCard" key={banner.id || index}>
+              <div className="homeBannerPreview">
+                {previewUrl
+                  ? <img src={previewUrl} alt={`Home banner ${index + 1}`} />
+                  : <span>Select an image or enter an image URL</span>}
+              </div>
+              <div className="homeBannerBody">
+                <strong>Banner {index + 1}</strong>
+                <label>Image file<input type="file" accept="image/*" onChange={(event) => selectBannerImage(index, event.target.files?.[0])} /></label>
+                <label>Image URL<input value={banner.url || ''} onChange={(event) => updateBanner(index, { url: event.target.value, imageData: '' })} placeholder="https://..." /></label>
+                <div className="formGrid">
+                  <label>Display order<input type="number" value={banner.sortOrder ?? index} onChange={(event) => updateBanner(index, { sortOrder: Number(event.target.value) })} /></label>
+                  <label className="checkboxField">
+                    <input type="checkbox" checked={banner.active !== false} onChange={(event) => updateBanner(index, { active: event.target.checked })} />
+                    <span>Show in app</span>
+                  </label>
+                </div>
+                <div className="rowActions">
+                  <button type="button" onClick={() => { setBanners(current => current.filter((_, bannerIndex) => bannerIndex !== index)); setNotice(''); }}>Remove</button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {!banners.length && <EmptyState>No home banners configured. Add a banner and save your changes.</EmptyState>}
+    </Panel>
+  );
+}
+
 function RoomThemeRequests({ request }) {
   const [rows, setRows] = useState([]);
   const [status, setStatus] = useState('pending');
@@ -1742,6 +1865,7 @@ function App() {
     if (!session) return null;
     const role = session.user?.role;
     if (role !== 'super_admin') return <OfficialOnly setSession={setSession} />;
+    if (active === 'homeBanners') return <HomeBanners request={request} />;
     if (active === 'roomLinks') return <RoomLinks request={request} apiBase={apiBase} />;
     if (active === 'users') return <Users request={request} />;
     if (active === 'hosts') return <Requests request={request} type="hosts" />;

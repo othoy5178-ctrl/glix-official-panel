@@ -54,6 +54,9 @@ td small, .muted, .brand span, .userPill small { display: block; color: #6b7d90;
 .inlineForm { grid-template-columns: 1fr 180px auto; }
 .formPanel { padding: 16px; display: grid; gap: 14px; max-width: 680px; }
 .formGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.checkboxField { align-items: center; align-self: end; border: 1px solid #d6dee9; border-radius: 8px; display: flex; min-height: 42px; padding: 10px 11px; }
+.checkboxField input { accent-color: #0969da; height: 18px; margin: 0; width: 18px; }
+.checkboxField span { color: #102033; }
 .pager { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 14px; border-top: 1px solid #edf1f6; color: #516173; font-weight: 750; }
 
 .badge { display: inline-flex; align-items: center; min-height: 24px; border-radius: 999px; padding: 3px 9px; font-size: 11px; font-weight: 900; text-transform: capitalize; background: #eef4fb; color: #516173; }
@@ -94,6 +97,12 @@ td small, .muted, .brand span, .userPill small { display: block; color: #6b7d90;
 .roomLinkCard { margin: 16px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: center; border: 1px solid #d7ebe7; border-radius: 14px; padding: 18px; background: linear-gradient(135deg, #fbfffd, #eefaf7); }
 .roomLinkCard h3 { margin: 0 0 10px; font-size: 22px; letter-spacing: 0; }
 .roomLinkActions { display: flex; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
+.homeBannerGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; padding: 16px; }
+.homeBannerCard { border: 1px solid #e2e8f0; border-radius: 10px; background: #fbfdff; overflow: hidden; }
+.homeBannerPreview { aspect-ratio: 5 / 2; display: grid; place-items: center; background: #e8eef5; color: #6b7d90; padding: 12px; text-align: center; font-weight: 750; }
+.homeBannerPreview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.homeBannerBody { display: grid; gap: 12px; padding: 14px; }
+.homeBannerBody > strong { font-size: 15px; }
 
 .modalBackdrop { position: fixed; inset: 0; background: rgba(6, 20, 38, .44); display: grid; place-items: center; padding: 18px; z-index: 10; }
 .modal { width: min(620px, 100%); max-height: 92vh; overflow: auto; background: #fff; border-radius: 14px; border: 1px solid #e2e8f0; box-shadow: 0 30px 90px rgba(6, 20, 38, .28); padding: 20px; display: grid; gap: 14px; }
